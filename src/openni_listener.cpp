@@ -20,7 +20,7 @@
 #endif
 #include "parameter_server.h"
 //Documentation see header file
-#include "pcl/conversions.h"
+#include "pcl/ros/conversions.h"
 #include <pcl/common/distances.h>
 #include <pcl/io/io.h>
 #include <pcl/io/impl/pcd_io.hpp>
@@ -51,7 +51,8 @@
 #include "scoped_timer.h"
 //for comparison with ground truth from mocap and movable cameras on robots
 #include <tf/transform_listener.h>
-
+#include <fstream>
+#include <iostream>
 typedef message_filters::Subscriber<sensor_msgs::Image> image_sub_type;      
 typedef message_filters::Subscriber<sensor_msgs::CameraInfo> cinfo_sub_type;      
 typedef message_filters::Subscriber<sensor_msgs::PointCloud2> pc_sub_type;      
@@ -127,8 +128,7 @@ OpenNIListener::OpenNIListener(GraphManager* graph_mgr)
   if(ps->get<bool>("encoding_bgr")){
     image_encoding_ = "bgr8";//used in conversion to qimage. exact value does not matter, just not rgb8
   }
-  detector_.reset(createDetector(ps->get<std::string>("feature_detector_type")));
-
+  detector_ = createDetector(ps->get<std::string>("feature_detector_type"));
   extractor_ = createDescriptorExtractor(ps->get<std::string>("feature_extractor_type"));
   setupSubscribers();
 }
@@ -214,7 +214,7 @@ static std::vector<std::string> createTopicsVector(const std::string& visua_tpc,
   }
   return topics;
 } 
-
+/*
 void OpenNIListener::processBagfile(std::string filename,
                                     const std::string& visua_tpc,
                                     const std::string& depth_tpc,
@@ -223,6 +223,8 @@ void OpenNIListener::processBagfile(std::string filename,
                                     const std::string& odom_tpc,
                                     const std::string& tf_tpc)
 {
+ static std::ofstream processBagFileDebug("/home/h/HCode/processBagFileDebug.txt");
+ processBagFileDebug<<"OpenNIListener, Loading Bagfile : "<<filename<<std::endl;
   ROS_INFO_NAMED("OpenNIListener", "Loading Bagfile %s", filename.c_str());
   Q_EMIT iamBusy(4, "Loading Bagfile", 0);
   { //bag will be destructed after this block (hopefully frees memory for the optimizer)
@@ -261,7 +263,7 @@ void OpenNIListener::processBagfile(std::string filename,
         if(!ros::ok()) return;
       } while(pause_);
       ROS_INFO_NAMED("OpenNIListener", "Processing %s of type %s with timestamp %f", m.getTopic().c_str(), m.getDataType().c_str(), m.getTime().toSec());
-
+      processBagFileDebug<<"OpenNIListener, Processing "<< m.getTopic().c_str()<<" of type "<< m.getDataType().c_str()<<" with timestamp "<< m.getTime().toSec()<<std::endl;
       if (m.getTopic() == odom_tpc || ("/" + m.getTopic() == odom_tpc)) {
         ROS_INFO_NAMED("OpenNIListener", "Processing %s of type %s with timestamp %f", m.getTopic().c_str(), m.getDataType().c_str(), m.getTime().toSec());
         nav_msgs::OdometryConstPtr odommsg = m.instantiate<nav_msgs::Odometry>();
@@ -338,6 +340,295 @@ void OpenNIListener::processBagfile(std::string filename,
     input_bag.close();
   }
 }
+*/
+/*
+void OpenNIListener::processBagfile(std::string filename,
+                                    const std::string& visua_tpc,
+                                    const std::string& depth_tpc,
+                                    const std::string& points_tpc,
+                                    const std::string& cinfo_tpc,
+                                    const std::string& odom_tpc,
+                                    const std::string& tf_tpc)
+{
+  ParameterServer* ps = ParameterServer::instance();
+  int s_interval = ps->get<int>("sample_interval");
+ static std::ofstream processBagFileDebug("/home/h/HCode/processBagFileDebug.txt");
+ processBagFileDebug<<"OpenNIListener, Loading Bagfile : "<<filename<<std::endl;
+ processBagFileDebug<<"sample interval: "<<s_interval<<std::endl;
+  ROS_INFO_NAMED("OpenNIListener", "Loading Bagfile %s", filename.c_str());
+  Q_EMIT iamBusy(4, "Loading Bagfile", 0);
+  { //bag will be destructed after this block (hopefully frees memory for the optimizer)
+    rosbag::Bag input_bag;
+    try{
+      input_bag.open(filename, rosbag::bagmode::Read);
+    } catch(rosbag::BagIOException ex) {
+      ROS_FATAL("Opening Bagfile %s failed: %s Quitting!", filename.c_str(), ex.what());
+      ros::shutdown();
+      return;
+    }
+    ROS_INFO_NAMED("OpenNIListener", "Opened Bagfile %s", filename.c_str());
+
+    std::vector<std::string> topics; 
+    topics = createTopicsVector(visua_tpc, depth_tpc, points_tpc, cinfo_tpc, odom_tpc, tf_tpc);
+    rosbag::View view(input_bag, rosbag::TopicQuery(topics));
+    Q_EMIT iamBusy(4, "Processing Bagfile", view.size());
+    // Simulate sending of the messages in the bagfile
+    std::deque<sensor_msgs::Image::ConstPtr> vis_images;
+    std::deque<sensor_msgs::Image::ConstPtr> dep_images;
+    std::deque<sensor_msgs::CameraInfo::ConstPtr> cam_infos;
+    std::deque<sensor_msgs::PointCloud2::ConstPtr> pointclouds;
+    std::deque<nav_msgs::OdometryConstPtr> odometries;
+    //ros::Time last_tf=ros::Time(0);
+    ros::Time last_tf=ros::TIME_MIN;
+
+
+
+    bool tf_available = false;
+    int counter = 0;
+    int k=s_interval;
+    int count=0;
+    BOOST_FOREACH(rosbag::MessageInstance const m, view)
+    {
+      Q_EMIT progress(4, "Processing Bagfile", counter++);
+      do{ 
+        usleep(10);
+        if(!ros::ok()) return;
+      } while(pause_);
+      ROS_INFO_NAMED("OpenNIListener", "Processing %s of type %s with timestamp %f", m.getTopic().c_str(), m.getDataType().c_str(), m.getTime().toSec());
+      //processBagFileDebug<<"OpenNIListener, Processing "<< m.getTopic().c_str()<<" of type "<< m.getDataType().c_str()<<" with timestamp "<< m.getTime().toSec()<<std::endl;
+      
+      processBagFileDebug<<"count: "<<count<<std::endl;
+      if (m.getTopic() == odom_tpc || ("/" + m.getTopic() == odom_tpc)) {
+        processBagFileDebug<<"@ 1."<<std::endl;
+        ROS_INFO_NAMED("OpenNIListener", "Processing %s of type %s with timestamp %f", m.getTopic().c_str(), m.getDataType().c_str(), m.getTime().toSec());
+        nav_msgs::OdometryConstPtr odommsg = m.instantiate<nav_msgs::Odometry>();
+
+        if (odommsg&&(count%k==1)) odometries.push_back(odommsg);
+      }
+      else if (m.getTopic() == visua_tpc || ("/" + m.getTopic() == visua_tpc))
+      {
+        processBagFileDebug<<"@ 2."<<std::endl;
+        ++count;
+        sensor_msgs::Image::ConstPtr rgb_img = m.instantiate<sensor_msgs::Image>();
+        if (rgb_img&&(count%k==1)) vis_images.push_back(rgb_img);
+        ROS_DEBUG("Found Message of %s", visua_tpc.c_str());
+      }
+      else if (m.getTopic() == depth_tpc || ("/" + m.getTopic() == depth_tpc))
+      {
+        processBagFileDebug<<"@ 3."<<std::endl;
+        sensor_msgs::Image::ConstPtr depth_img = m.instantiate<sensor_msgs::Image>();
+        //if (depth_img) depth_img_sub_->newMessage(depth_img);
+        if (depth_img&&(count%k==1)) dep_images.push_back(depth_img);
+        ROS_DEBUG("Found Message of %s", depth_tpc.c_str());
+      }
+      else if (m.getTopic() == points_tpc || ("/" + m.getTopic() == points_tpc))
+      {
+        processBagFileDebug<<"@ 4."<<std::endl;
+        sensor_msgs::PointCloud2::ConstPtr pointcloud = m.instantiate<sensor_msgs::PointCloud2>();
+        //if (cam_info) cam_info_sub_->newMessage(cam_info);
+        if (pointcloud&&(count%k==1)) pointclouds.push_back(pointcloud);
+        ROS_DEBUG("Found Message of %s", points_tpc.c_str());
+      }
+      else if (m.getTopic() == cinfo_tpc || ("/" + m.getTopic() == cinfo_tpc))
+      {
+        processBagFileDebug<<"@ 5."<<std::endl;
+        sensor_msgs::CameraInfo::ConstPtr cam_info = m.instantiate<sensor_msgs::CameraInfo>();
+        //if (cam_info) cam_info_sub_->newMessage(cam_info);
+        if (cam_info&&(count%k==1)) cam_infos.push_back(cam_info);
+        ROS_DEBUG("Found Message of %s", cinfo_tpc.c_str());
+      }
+      else if (m.getTopic() == tf_tpc|| ("/" + m.getTopic() == tf_tpc)){
+        processBagFileDebug<<"@ 6."<<std::endl;
+        tf::tfMessage::ConstPtr tf_msg = m.instantiate<tf::tfMessage>();
+        if (tf_msg&&(count%k==1)) {
+          tf_available = true;
+          addTFMessageDirectlyToTransformer(tf_msg, tflistener_);
+          last_tf = tf_msg->transforms[0].header.stamp;
+          last_tf -= ros::Duration(0.1);
+        }
+      }
+      if (last_tf == ros::TIME_MIN){//If not a valid time yet, set to something before first message's stamp
+      processBagFileDebug<<"@ 7."<<std::endl;
+        last_tf = m.getTime();
+        last_tf -= ros::Duration(0.1);
+      }
+      //last_tf = m.getTime();//FIXME: No TF -> no processing
+      while(!odometries.empty() && odometries.front()->header.stamp < last_tf){
+          ROS_INFO_NAMED("OpenNIListener", "Sending Odometry message");
+          odomCallback(odometries.front());
+          odometries.pop_front();
+      }
+      while(!vis_images.empty() && vis_images.front()->header.stamp < last_tf){
+          ROS_INFO_NAMED("OpenNIListener", "Forwarding buffered visual message from time %12f", vis_images.front()->header.stamp.toSec());
+          rgb_img_sub_->newMessage(vis_images.front());
+          vis_images.pop_front();
+      }
+      while(!dep_images.empty() && dep_images.front()->header.stamp < last_tf){
+          ROS_INFO_NAMED("OpenNIListener", "Forwarding buffered depth message from time %12f", dep_images.front()->header.stamp.toSec());
+          depth_img_sub_->newMessage(dep_images.front());
+          dep_images.pop_front();
+      }
+      while(!cam_infos.empty() && cam_infos.front()->header.stamp < last_tf){
+          ROS_INFO_NAMED("OpenNIListener", "Forwarding buffered cam info message from time %12f", cam_infos.front()->header.stamp.toSec());
+          cam_info_sub_->newMessage(cam_infos.front());
+          cam_infos.pop_front();
+      }
+      while(!pointclouds.empty() && pointclouds.front()->header.stamp < last_tf){
+          pc_sub_->newMessage(pointclouds.front());
+          pointclouds.pop_front();
+      }
+
+    }
+    ROS_WARN_NAMED("eval", "Finished processing of Bagfile");
+    input_bag.close();
+  }
+}
+*/
+
+
+void OpenNIListener::processBagfile(std::string filename,
+                                    const std::string& visua_tpc,
+                                    const std::string& depth_tpc,
+                                    const std::string& points_tpc,
+                                    const std::string& cinfo_tpc,
+                                    const std::string& odom_tpc,
+                                    const std::string& tf_tpc)
+{
+  ParameterServer* ps = ParameterServer::instance();
+  int s_interval = ps->get<int>("sample_interval");
+ static std::ofstream processBagFileDebug("/home/h/HCode/processBagFileDebug.txt");
+ processBagFileDebug<<"OpenNIListener, Loading Bagfile : "<<filename<<std::endl;
+ processBagFileDebug<<"sample interval: "<<s_interval<<std::endl;
+  ROS_INFO_NAMED("OpenNIListener", "Loading Bagfile %s", filename.c_str());
+  Q_EMIT iamBusy(4, "Loading Bagfile", 0);
+  { //bag will be destructed after this block (hopefully frees memory for the optimizer)
+    rosbag::Bag input_bag;
+    try{
+      input_bag.open(filename, rosbag::bagmode::Read);
+    } catch(rosbag::BagIOException ex) {
+      ROS_FATAL("Opening Bagfile %s failed: %s Quitting!", filename.c_str(), ex.what());
+      ros::shutdown();
+      return;
+    }
+    ROS_INFO_NAMED("OpenNIListener", "Opened Bagfile %s", filename.c_str());
+
+    std::vector<std::string> topics; 
+    topics = createTopicsVector(visua_tpc, depth_tpc, points_tpc, cinfo_tpc, odom_tpc, tf_tpc);
+    rosbag::View view(input_bag, rosbag::TopicQuery(topics));
+    Q_EMIT iamBusy(4, "Processing Bagfile", view.size());
+    // Simulate sending of the messages in the bagfile
+    std::deque<sensor_msgs::Image::ConstPtr> vis_images;
+    std::deque<sensor_msgs::Image::ConstPtr> dep_images;
+    std::deque<sensor_msgs::CameraInfo::ConstPtr> cam_infos;
+    std::deque<sensor_msgs::PointCloud2::ConstPtr> pointclouds;
+    std::deque<nav_msgs::OdometryConstPtr> odometries;
+    //ros::Time last_tf=ros::Time(0);
+    ros::Time last_tf=ros::TIME_MIN;
+
+    bool tf_available = false;
+    int counter = 0;
+    int k=s_interval;
+    int count=0;
+    BOOST_FOREACH(rosbag::MessageInstance const m, view)
+    {
+      Q_EMIT progress(4, "Processing Bagfile", counter++);
+      do{ 
+        usleep(10);
+        if(!ros::ok()) return;
+      } while(pause_);
+      ROS_INFO_NAMED("OpenNIListener", "Processing %s of type %s with timestamp %f", m.getTopic().c_str(), m.getDataType().c_str(), m.getTime().toSec());
+      //processBagFileDebug<<"OpenNIListener, Processing "<< m.getTopic().c_str()<<" of type "<< m.getDataType().c_str()<<" with timestamp "<< m.getTime().toSec()<<std::endl;    
+      processBagFileDebug<<"count: "<<count<<std::endl;
+      if (m.getTopic() == odom_tpc || ("/" + m.getTopic() == odom_tpc)) {
+        processBagFileDebug<<"@ 1."<<std::endl;
+        ROS_INFO_NAMED("OpenNIListener", "Processing %s of type %s with timestamp %f", m.getTopic().c_str(), m.getDataType().c_str(), m.getTime().toSec());
+        nav_msgs::OdometryConstPtr odommsg = m.instantiate<nav_msgs::Odometry>();
+
+        if (odommsg&&(count%k==0)) odometries.push_back(odommsg);
+      }
+      else if (m.getTopic() == visua_tpc || ("/" + m.getTopic() == visua_tpc))
+      {
+        processBagFileDebug<<"@ 2."<<std::endl;
+        
+        sensor_msgs::Image::ConstPtr rgb_img = m.instantiate<sensor_msgs::Image>();
+        ++count;
+        if (rgb_img&&((count-1)%k==0)) vis_images.push_back(rgb_img);
+        
+        ROS_DEBUG("Found Message of %s", visua_tpc.c_str());
+      }
+      else if (m.getTopic() == depth_tpc || ("/" + m.getTopic() == depth_tpc))
+      {
+        processBagFileDebug<<"@ 3."<<std::endl;
+        sensor_msgs::Image::ConstPtr depth_img = m.instantiate<sensor_msgs::Image>();
+        //if (depth_img) depth_img_sub_->newMessage(depth_img);
+        if (depth_img&&((count-1)%k==0)) dep_images.push_back(depth_img);
+        ROS_DEBUG("Found Message of %s", depth_tpc.c_str());
+      }
+      else if (m.getTopic() == points_tpc || ("/" + m.getTopic() == points_tpc))
+      {
+        processBagFileDebug<<"@ 4."<<std::endl;
+        sensor_msgs::PointCloud2::ConstPtr pointcloud = m.instantiate<sensor_msgs::PointCloud2>();
+        //if (cam_info) cam_info_sub_->newMessage(cam_info);
+        if (pointcloud&&((count-1)%k==0)) pointclouds.push_back(pointcloud);
+        ROS_DEBUG("Found Message of %s", points_tpc.c_str());
+      }
+      else if (m.getTopic() == cinfo_tpc || ("/" + m.getTopic() == cinfo_tpc))
+      {
+        processBagFileDebug<<"@ 5."<<std::endl;
+        sensor_msgs::CameraInfo::ConstPtr cam_info = m.instantiate<sensor_msgs::CameraInfo>();
+        //if (cam_info) cam_info_sub_->newMessage(cam_info);
+        if (cam_info&&((count-1)%k==0)) cam_infos.push_back(cam_info);
+        ROS_DEBUG("Found Message of %s", cinfo_tpc.c_str());
+      }
+      else if (m.getTopic() == tf_tpc|| ("/" + m.getTopic() == tf_tpc)){
+        processBagFileDebug<<"@ 6."<<std::endl;
+        tf::tfMessage::ConstPtr tf_msg = m.instantiate<tf::tfMessage>();
+        if (tf_msg&&(count%k==0)) {
+          tf_available = true;
+          addTFMessageDirectlyToTransformer(tf_msg, tflistener_);
+          last_tf = tf_msg->transforms[0].header.stamp;
+          last_tf -= ros::Duration(0.1);
+        }
+      }
+      if (last_tf == ros::TIME_MIN){//If not a valid time yet, set to something before first message's stamp
+      processBagFileDebug<<"@ 7."<<std::endl;
+        last_tf = m.getTime();
+        last_tf -= ros::Duration(0.1);
+      }
+      //last_tf = m.getTime();//FIXME: No TF -> no processing
+      while(!odometries.empty() && odometries.front()->header.stamp < last_tf){
+          ROS_INFO_NAMED("OpenNIListener", "Sending Odometry message");
+          odomCallback(odometries.front());
+          odometries.pop_front();
+      }
+      while(!vis_images.empty() && vis_images.front()->header.stamp < last_tf){
+          ROS_INFO_NAMED("OpenNIListener", "Forwarding buffered visual message from time %12f", vis_images.front()->header.stamp.toSec());
+          rgb_img_sub_->newMessage(vis_images.front());
+          vis_images.pop_front();
+      }
+      while(!dep_images.empty() && dep_images.front()->header.stamp < last_tf){
+          ROS_INFO_NAMED("OpenNIListener", "Forwarding buffered depth message from time %12f", dep_images.front()->header.stamp.toSec());
+          depth_img_sub_->newMessage(dep_images.front());
+          dep_images.pop_front();
+      }
+      while(!cam_infos.empty() && cam_infos.front()->header.stamp < last_tf){
+          ROS_INFO_NAMED("OpenNIListener", "Forwarding buffered cam info message from time %12f", cam_infos.front()->header.stamp.toSec());
+          cam_info_sub_->newMessage(cam_infos.front());
+          cam_infos.pop_front();
+      }
+      while(!pointclouds.empty() && pointclouds.front()->header.stamp < last_tf){
+          pc_sub_->newMessage(pointclouds.front());
+          pointclouds.pop_front();
+      }
+
+    }
+    ROS_WARN_NAMED("eval", "Finished processing of Bagfile");
+    input_bag.close();
+  }
+}
+
+
+
 
 void OpenNIListener::loadBagFakeSubscriberSetup(const std::string& visua_tpc,
                                                 const std::string& depth_tpc,

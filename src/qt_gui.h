@@ -33,6 +33,7 @@
 #include <QMap>
 
 class QAction;
+class QActionGroup;
 class QLabel;
 class QMenu;
 class GLViewer;

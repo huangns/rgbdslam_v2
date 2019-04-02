@@ -25,7 +25,6 @@
 //#include "pcl/ros/conversions.h"
 #include <pcl/common/transformation_from_correspondences.h>
 //#include <opencv2/highgui/highgui.hpp>
-#include "opencv2/imgproc.hpp"
 //#include <qtconcurrentrun.h>
 //#include <QtConcurrentMap> 
 
@@ -60,6 +59,7 @@
 #include <string>
 #include <iostream>
 #include <cmath>
+#include <fstream>
 QMutex Node::gicp_mutex;
 QMutex Node::siftgpu_mutex;
 
@@ -103,7 +103,7 @@ Node::Node(const cv::Mat& visual,
            const cv::Mat& detection_mask,
            const sensor_msgs::CameraInfoConstPtr& cam_info, 
            myHeader depth_header,
-           cv::Ptr<cv::Feature2D> detector,
+           cv::Ptr<cv::FeatureDetector> detector,
            cv::Ptr<cv::DescriptorExtractor> extractor) :
   id_(-1), seq_id_(-1), vertex_id_(-1), valid_tf_estimate_(true),
   timestamp_(depth_header.stamp),
@@ -138,7 +138,7 @@ Node::Node(const cv::Mat& visual,
 
   cv::Mat gray_img; 
   if(visual.type() == CV_8UC3){
-    cv::cvtColor(visual, gray_img, CV_RGB2GRAY);
+    cvtColor(visual, gray_img, CV_RGB2GRAY);
   } else {
     gray_img = visual;
   }
@@ -156,7 +156,6 @@ Node::Node(const cv::Mat& visual,
   {
     ScopedTimer s("Feature Detection");
     ROS_FATAL_COND(detector.empty(), "No valid detector!");
-
     detector->detect( gray_img, feature_locations_2d_, detection_mask);// fill 2d locations
   }
 
@@ -250,7 +249,7 @@ Node::Node(const cv::Mat& visual,
 
 
 Node::Node(const cv::Mat visual,
-           cv::Ptr<cv::Feature2D> detector,
+           cv::Ptr<cv::FeatureDetector> detector,
            cv::Ptr<cv::DescriptorExtractor> extractor,
            pointcloud_type::Ptr point_cloud,
            const cv::Mat detection_mask) : 
@@ -273,7 +272,7 @@ Node::Node(const cv::Mat visual,
   ScopedTimer s("Node Constructor");
 
   cv::Mat gray_img; 
-  if(visual.type() == CV_8UC3){ cv::cvtColor(visual, gray_img, CV_RGB2GRAY); } 
+  if(visual.type() == CV_8UC3){ cvtColor(visual, gray_img, CV_RGB2GRAY); } 
   else { gray_img = visual; }
 
 
@@ -453,7 +452,7 @@ dgc::gicp::GICPPointSet* Node::getGICPStructure(unsigned int max_count) const
   non_NaN.reserve((*pc_col).points.size());
   for (unsigned int i=0; i<(*pc_col).points.size(); i++ ){
     point_type&  p = (*pc_col).points.at(i);
-    if (!std::isnan(p.z)) { // add points to candidate pointset for icp
+    if (!isnan(p.z)) { // add points to candidate pointset for icp
       g_p.x=p.x;
       g_p.y=p.y;
       g_p.z=p.z;
@@ -880,7 +879,7 @@ void Node::projectTo3D(std::vector<cv::KeyPoint>& feature_locations_2d,
     point_type p3d = point_cloud->at((int) p2d.x,(int) p2d.y);
 
     // Check for invalid measurements
-    if ( (p3d.z > maximum_depth) || std::isnan(p3d.x) || std::isnan(p3d.y) || std::isnan(p3d.z))
+    if ( (p3d.z > maximum_depth) || isnan(p3d.x) || isnan(p3d.y) || isnan(p3d.z))
     {
       ROS_DEBUG_NAMED(__FILE__, "Feature %d has been extracted at NaN depth. Omitting", i);
       feature_locations_2d.erase(feature_locations_2d.begin()+i);
@@ -902,10 +901,16 @@ void Node::projectTo3D(std::vector<cv::KeyPoint>& feature_locations_2d,
                        const cv::Mat& depth,
                        const sensor_msgs::CameraInfoConstPtr& cam_info)
 {
+
+ // static std::ofstream projectTo3Debug("/home/h/HCode/pro.txt");
+
   ScopedTimer s(__FUNCTION__);
 
   ParameterServer* ps = ParameterServer::instance();
   double depth_scaling = ps->get<double>("depth_scaling_factor");
+ // projectTo3Debug<<"depth_scaling: "<<depth_scaling<<std::endl;
+
+
   size_t max_keyp = ps->get<int>("max_keypoints");
   double maximum_depth = ps->get<double>("maximum_depth");
   float x,y,z;//temp point, 
@@ -920,6 +925,21 @@ void Node::projectTo3D(std::vector<cv::KeyPoint>& feature_locations_2d,
   float fxinv = 1.0/521.0;//1.0f / cam_info->K[0]; 
   float fyinv = 1.0/521.0;//1.0f / cam_info->K[4]; 
   */
+
+  {
+    static int count=0;
+    if(!count)
+    {
+      ++count;
+      static std::ofstream cameraInfo( "/home/h/HCode/git/rgbdv2/debugsave/cameraInfo.txt");
+      cameraInfo<<"param:\n"<<ps->get<double>("depth_camera_fx") <<" "<<ps->get<double>("depth_camera_fy")<<" "<<ps->get<double>("depth_camera_cx") <<" "<<
+      ps->get<double>("depth_camera_cy")<<std::endl;
+      cameraInfo<<"camera Info:\n"<< cam_info->K[0]<<" "<<cam_info->K[4]<<" "<<cam_info->K[2]<<" "<<cam_info->K[5]<<std::endl;
+      cameraInfo<<"last: \n"<<fxinv<<" "<<fyinv<<" "<<cx<<" "<<cy<<std::endl;
+    }
+  }
+
+
   cv::Point2f p2d;
 
   if(feature_locations_3d.size()){
@@ -953,7 +973,7 @@ void Node::projectTo3D(std::vector<cv::KeyPoint>& feature_locations_2d,
       continue;
     }
     backProject(fxinv, fyinv, cx, cy, p2d.x, p2d.y, Z, x, y, z);
-
+//projectTo3Debug<<"Z: "<<Z<<std::endl;
     feature_locations_3d.push_back(Eigen::Vector4f(x, y, z, 1.0));
     i++; //Only increment if no element is removed from vector
     if(feature_locations_3d.size() >= max_keyp) break;
@@ -1019,7 +1039,7 @@ void Node::computeInliersAndError(const std::vector<cv::DMatch> & all_matches,
 
 }
 
-
+//随机采样取点
 ///Randomly choose <sample_size> of the matches
 std::vector<cv::DMatch> sample_matches_prefer_by_distance(unsigned int sample_size, std::vector<cv::DMatch>& matches_with_depth)
 {
@@ -1119,8 +1139,8 @@ bool Node::getRelativeTransformationTo(const Node* earlier_node,
       matches_with_depth = new std::vector<cv::DMatch>(); //matches without depth can validate but not create the trafo
       matches_with_depth->reserve(initial_matches->size());
     BOOST_FOREACH(const cv::DMatch& m, *initial_matches){
-        if(!std::isnan(this->feature_locations_3d_[m.queryIdx](2)) 
-           && !std::isnan(earlier_node->feature_locations_3d_[m.trainIdx](2)))
+        if(!isnan(this->feature_locations_3d_[m.queryIdx](2)) 
+           && !isnan(earlier_node->feature_locations_3d_[m.trainIdx](2)))
             matches_with_depth->push_back(m);
     }
   }
@@ -1157,6 +1177,7 @@ bool Node::getRelativeTransformationTo(const Node* earlier_node,
         }
 
         //superior to before?
+        //如果效果比之前的好，则替换掉之前的最好的结果
         if (inlier.size() >= refined_matches.size() && inlier_error <= refined_error) {
           size_t prev_num_inliers = refined_matches.size();
           assert(inlier_error>=0);
@@ -1311,7 +1332,7 @@ MatchingResult Node::matchNodePair(const Node* older_node)
        initial_node_matches_ > ParameterServer::instance()->get<int>("max_connections")) 
       return mr; //enough is enough
     const unsigned int min_matches = (unsigned int) ParameterServer::instance()->get<int>("min_matches");// minimal number of feature correspondences to be a valid candidate for a link
-
+//特征匹配关系建立
     this->featureMatching(older_node, &mr.all_matches); 
 
     double ransac_quality = 0;
@@ -1332,6 +1353,7 @@ MatchingResult Node::matchNodePair(const Node* older_node)
           nn_ratio /= mr.inlier_matches.size();
           //ParameterServer::instance()->set("nn_distance_ratio", static_cast<double>(nn_ratio + 0.2));
           mr.final_trafo = mr.ransac_trafo;
+          //这个信息矩阵有点
           mr.edge.informationMatrix =   Eigen::Matrix<double,6,6>::Identity()*(mr.inlier_matches.size()/(mr.rmse*mr.rmse)); //TODO: What do we do about the information matrix? Scale with inlier_count. Should rmse be integrated?)
 
           mr.edge.id1 = older_node->id_;//and we have a valid transformation
@@ -1373,6 +1395,9 @@ MatchingResult Node::matchNodePair(const Node* older_node)
               mr.edge.transform = mr.final_trafo.cast<double>();//we insert an edge between the frames
               std::cout << std::endl << mr.final_trafo << std::endl;
             }
+          }else
+          {
+            std::cout<<"no PCL ICP."<<std::endl;
           }
 #endif
         }
@@ -1409,7 +1434,12 @@ MatchingResult Node::matchNodePair(const Node* older_node)
                 }
             }
         }
+    }else
+    {
+      std::cout<<"no icp *************************************8."<<std::endl;
     }
+
+
 #endif  
 
     if(found_transformation) {

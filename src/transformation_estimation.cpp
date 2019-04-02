@@ -53,7 +53,10 @@ void optimizerSetup(g2o::SparseOptimizer& optimizer){
 
   g2o::ParameterCamera* cameraParams = new g2o::ParameterCamera();
   //FIXME From Parameter server or cam calibration
-  cameraParams->setKcam(521,521,319.5,239.5);
+
+
+
+  cameraParams->setKcam(517.3,516.5,318.6,255.3);
   g2o::SE3Quat offset; // identity
   cameraParams->setOffset(offset);
   cameraParams->setId(0);

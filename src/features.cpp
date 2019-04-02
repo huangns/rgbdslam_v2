@@ -22,6 +22,7 @@
 #include "opencv2/nonfree/nonfree.hpp"
 #endif
 #endif
+#include "aorb.h"
 
 #include "feature_adjuster.h"
 #include "parameter_server.h"
@@ -60,7 +61,7 @@ StatefulFeatureDetector* adjustedGridWrapper(cv::Ptr<DetectorAdjuster> detadj)
 }
 
 //Use Grid or Dynamic or GridDynamic as prefix of FAST, SIFT, SURF or AORB
-Feature2D* createDetector(const std::string& detectorName){
+FeatureDetector* createDetector(const std::string& detectorName){
   //For anything but SIFTGPU
   DetectorAdjuster* detAdj = NULL;
 
@@ -85,11 +86,11 @@ Feature2D* createDetector(const std::string& detectorName){
      ROS_ERROR("To enable non-free functionality build with CV_NONFREE set.");
      ROS_WARN("Using ORB feature detection instead.");
      ParameterServer::instance()->set("feature_detector_type", std::string("ORB"));
-     detAdj = new DetectorAdjuster("ORB", 20);
+     detAdj = new DetectorAdjuster("AORB", 20);
   }
 #endif
   else if(detectorName == "ORB") {
-     detAdj = new DetectorAdjuster("ORB", 20);
+     detAdj = new DetectorAdjuster("AORB", 20);
   } 
   else {
     ROS_ERROR("Unsupported Keypoint Detector. Using ORB as fallback.");
@@ -111,34 +112,26 @@ Feature2D* createDetector(const std::string& detectorName){
   }
   else return detAdj;
 }
-
-cv::Ptr<DescriptorExtractor> createDescriptorExtractor(std::string descriptorType) 
+//根据传入的字符串生成对应的特征点提取类指针（个人认为这个类是一个功能类，里面包含了提取特征的函数）
+DescriptorExtractor* createDescriptorExtractor(const std::string& descriptorType) 
 {
+    DescriptorExtractor* extractor = 0;
     if(descriptorType == "ORB") {
-        return ORB::create();
+        extractor = new OrbDescriptorExtractor();
     }
 #ifdef CV_NONFREE
     else if(descriptorType == "SIFT") {
-        return cv::xfeatures2d::SiftDescriptorExtractor::create();/*( double magnification=SIFT::DescriptorParams::GET_DEFAULT_MAGNIFICATION(), bool isNormalize=true, bool recalculateAngles=true, int nOctaves=SIFT::CommonParams::DEFAULT_NOCTAVES, int nOctaveLayers=SIFT::CommonParams::DEFAULT_NOCTAVE_LAYERS, int firstOctave=SIFT::CommonParams::DEFAULT_FIRST_OCTAVE, int angleMode=SIFT::CommonParams::FIRST_ANGLE )*/
+        extractor = new SiftDescriptorExtractor();/*( double magnification=SIFT::DescriptorParams::GET_DEFAULT_MAGNIFICATION(), bool isNormalize=true, bool recalculateAngles=true, int nOctaves=SIFT::CommonParams::DEFAULT_NOCTAVES, int nOctaveLayers=SIFT::CommonParams::DEFAULT_NOCTAVE_LAYERS, int firstOctave=SIFT::CommonParams::DEFAULT_FIRST_OCTAVE, int angleMode=SIFT::CommonParams::FIRST_ANGLE )*/
     }
     else if(descriptorType == "SURF") {
-        return cv:xfeatures2d::SURF();/*( int nOctaves=4, int nOctaveLayers=2, bool extended=false )*/
+        extractor = new SurfDescriptorExtractor();/*( int nOctaves=4, int nOctaveLayers=2, bool extended=false )*/
     }
     else if(descriptorType == "SURF128") {
-        auto extractor = cv:xfeatures2d::SURF();
-        extractor->setExtended(true);
-        return extractor;
-    }
-    else if(descriptorType == "BRIEF") {
-        return cv::xfeatures2d::BriefDescriptorExtractor::create();
-    }
-    else if(descriptorType == "FREAK") {
-        return cv::xfeatures2d::FREAK::create();
+        extractor = new SurfDescriptorExtractor();/*( int nOctaves=4, int nOctaveLayers=2, bool extended=false )*/
+        extractor->set("extended", 1);
     }
 #else
-    else if(descriptorType == "SURF128" || descriptorType == "SIFT" || 
-            descriptorType == "SURF" || descriptorType == "BRIEF" ||
-            descriptorType == "FREAK") 
+    else if(descriptorType == "SURF128" || descriptorType == "SIFT" || descriptorType == "SURF") 
     {
         ROS_ERROR("OpenCV non-free functionality (%s) not built in.", descriptorType.c_str());
         ROS_ERROR("To enable non-free functionality build with CV_NONFREE set.");
@@ -147,8 +140,14 @@ cv::Ptr<DescriptorExtractor> createDescriptorExtractor(std::string descriptorTyp
         return createDescriptorExtractor("ORB");
     }
 #endif
+    else if(descriptorType == "BRIEF") {
+        extractor = new BriefDescriptorExtractor();
+    }
     else if(descriptorType == "BRISK") {
-        return cv::BRISK::create();/*brisk default: (int thresh=30, int octaves=3, float patternScale=1.0f)*/
+        extractor = new cv::BRISK();/*brisk default: (int thresh=30, int octaves=3, float patternScale=1.0f)*/
+    }
+    else if(descriptorType == "FREAK") {
+        extractor = new cv::FREAK();
     }
     else if(descriptorType == "SIFTGPU") {
       ROS_DEBUG("%s is to be used as extractor, creating ORB descriptor extractor as fallback.", descriptorType.c_str());
@@ -158,13 +157,15 @@ cv::Ptr<DescriptorExtractor> createDescriptorExtractor(std::string descriptorTyp
       ROS_ERROR("No valid descriptor-matcher-type given: %s. Using ORB", descriptorType.c_str());
       return createDescriptorExtractor("ORB");
     }
+    assert(extractor != 0 && "No extractor could be created");
+    return extractor;
 }
 
 static inline int hamming_distance_orb32x8_popcountll(const uint64_t* v1, const uint64_t* v2) {
   return (__builtin_popcountll(v1[0] ^ v2[0]) + __builtin_popcountll(v1[1] ^ v2[1])) +
          (__builtin_popcountll(v1[2] ^ v2[2]) + __builtin_popcountll(v1[3] ^ v2[3]));
 }
-
+//穷举方法计算查询ORB 描述子 和搜索序列search_array,查询结果索引存储在result_index中，而查询距离在函数返回值中
 int bruteForceSearchORB(const uint64_t* v, const uint64_t* search_array, const unsigned int& size, int& result_index){
   //constexpr unsigned int howmany64bitwords = 4;//32*8/64;
   const unsigned int howmany64bitwords = 4;//32*8/64;

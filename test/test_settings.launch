@@ -12,7 +12,9 @@
   <arg unless="$(arg debug)" name="launch_prefix" value=""/>
 
   <!-- These parameters are defined in the calling script (run_tests.sh)-->
-  <arg name="bagfile_name" />
+  <!--arg name="bagfile_name"/--> 
+  <!--arg name="bagfile_name" default="/home/h/HCode/git/rgbdv2/src/rgbdslam_v2-indigo/test/rgbd_dataset_freiburg1_xyz.bag"/--> 
+  <arg name="bagfile_name" default="/home/h/HCode/git/rgbdv2/src/rgbdslam_v2-indigo/test/datasets/rgbd_dataset_freiburg1_plant.bag"/> 
   <arg name="feature_type" default="ORB"/>
   <arg name="ransac_iterations" default="100"/>
   <arg name="optimizer_skip_step" default="10"/>
@@ -30,8 +32,8 @@
   	<param name="config/topic_points"                  value=""/>
     <param name="config/camera_info_topic"             value="/camera/rgb/camera_info"/>
     <param name="config/wide_topic"                    value=""/>
-    <param name="config/wide_cloud_topic"              value=""/>
-
+    <!--param name="config/wide_cloud_topic"              value=""/-->
+	<param name="debugFilePath"              value="/home/h/HCode/git/rgbdv2/debugsave/"/>
     <!--Values for benchmark dataset fr1 -->
     <!--
     <param name="config/depth_camera_fx"                     value="591.1"/>
@@ -79,7 +81,8 @@
     <param name="config/neighbor_candidates"           value="$(arg match_candidates)"/><!--search through this many graph neighbour nodes for corrspondences -->
     <param name="config/min_sampled_candidates"        value="$(arg sampled_candidates)"/><!--search through this many uniformly sampled nodes for corrspondences -->
     <param name="config/max_connections"               value="-1"/><!-- stop after this many succesfully found spation relations -->
-  	
+  	<param name="config/sample_interval"               value="1"/>
+	<param name="config/usebackend"               	   value="true"/>
   	<param name="config/drop_async_frames"             value="false"/>
   	<param name="config/min_matches"                   value="20"/>
   	<param name="config/max_dist_for_inliers"          value="2.0"/>
@@ -100,7 +103,7 @@
     <param name="config/squared_meshing_threshold"     value="0.0081"/>
     <param name="config/batch_processing"              value="true"/>    <!--store results and close after bagfile has been processed-->
     <param name="config/keep_all_nodes"                value="true"/> <!-- add nodes with constant motion if no transformation can be found -->
-    <param name="config/use_icp"                       value="false"/> <!-- Ignored if ICP is not compiled in (see top of CMakeLists.txt) -->
+    <param name="config/use_icp"                       value="true"/> <!-- Ignored if ICP is not compiled in (see top of CMakeLists.txt) -->
     <param name="config/gicp_max_cloud_size"           value="25000"/>
     <param name="config/use_root_sift"                 value="$(arg use_root_sift)"/>
     <param name="config/optimizer_iterations"          value="0.001"/><!-- maximum of iterations in online operation (i.e., does affect the final optimization in batch mode) -->

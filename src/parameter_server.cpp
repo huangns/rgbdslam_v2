@@ -170,6 +170,8 @@ void ParameterServer::defaultConfig() {
   //Debug
   addOption("show_cloud_with_id",            static_cast<int> (-1),                     "Show only one cloud (namely that perceived at the respective node id");
   addOption("use_error_shortcut",            static_cast<bool> (true),                  "Compute isotropic bounds first in inlier determination");
+  addOption("sample_interval",               static_cast<int> (5),                      "sample_interval for simulating quick motion");
+  addOption("usebackend",                    static_cast<bool> (true),                  "use backend optimization for pose");
 }
 
 

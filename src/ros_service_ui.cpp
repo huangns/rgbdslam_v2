@@ -53,7 +53,7 @@ void RosUi::pause(bool _pause_on) {
 
 
 bool RosUi::services(rgbdslam::rgbdslam_ros_ui::Request  &req,
-                     rgbdslam::rgbdslam_ros_ui::Response &)
+                     rgbdslam::rgbdslam_ros_ui::Response &res )
 {
   ROS_INFO_STREAM("Got Service Request. Command: " << req.command);
   if     (req.command == "reset"          ){ Q_EMIT reset(); }
@@ -75,7 +75,7 @@ bool RosUi::services(rgbdslam::rgbdslam_ros_ui::Request  &req,
 }
 
 bool RosUi::services_b(rgbdslam::rgbdslam_ros_ui_b::Request  &req,
-                       rgbdslam::rgbdslam_ros_ui_b::Response &)
+                       rgbdslam::rgbdslam_ros_ui_b::Response &res )
 {
   ROS_INFO_STREAM("Got Service Request. Command: " << req.command << ". Value: " << ( req.value ? "True" : "False"));
   if     (req.command == "pause"            ){ pause(req.value); }
@@ -90,7 +90,7 @@ bool RosUi::services_b(rgbdslam::rgbdslam_ros_ui_b::Request  &req,
 }
 
 bool RosUi::services_s(rgbdslam::rgbdslam_ros_ui_s::Request  &req,
-                       rgbdslam::rgbdslam_ros_ui_s::Response &)
+                       rgbdslam::rgbdslam_ros_ui_s::Response &res )
 {
     ROS_INFO_STREAM("Got Service Request. Command: " << req.command << ". Value: " << req.value );
     QString filename = QString::fromStdString(req.value);
@@ -108,7 +108,7 @@ bool RosUi::services_s(rgbdslam::rgbdslam_ros_ui_s::Request  &req,
     return true;
 }
 bool RosUi::services_f(rgbdslam::rgbdslam_ros_ui_f::Request  &req,
-                       rgbdslam::rgbdslam_ros_ui_f::Response &)
+                       rgbdslam::rgbdslam_ros_ui_f::Response &res )
 {
     ROS_INFO_STREAM("Got Service Request. Command: " << req.command << ". Value: " << req.value );
     if(req.command == "set_max"){

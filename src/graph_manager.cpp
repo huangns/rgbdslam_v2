@@ -186,10 +186,10 @@ void GraphManager::createOptimizer(std::string backend, g2o::SparseOptimizer* op
  //optimizer_->setUserLambdaInit(100.);
 
 #ifdef DO_FEATURE_OPTIMIZATION
- float fx = ps->get<double>("depth_camera_fx") > 0 ? ps->get<double>("depth_camera_fx") : 525; 
- float fy = ps->get<double>("depth_camera_fy") > 0 ? ps->get<double>("depth_camera_fy") : 525;
- float cx = ps->get<double>("depth_camera_cx") > 0 ? ps->get<double>("depth_camera_cx") : 319.5;
- float cy = ps->get<double>("depth_camera_cy") > 0 ? ps->get<double>("depth_camera_cy") : 239.5;
+ float fx = ps->get<double>("depth_camera_fx") != 0 ? ps->get<double>("depth_camera_fx") : 525; 
+ float fy = ps->get<double>("depth_camera_fy") != 0 ? ps->get<double>("depth_camera_fy") : 525;
+ float cx = ps->get<double>("depth_camera_cx") != 0 ? ps->get<double>("depth_camera_cx") : 319.5;
+ float cy = ps->get<double>("depth_camera_cy") != 0 ? ps->get<double>("depth_camera_cy") : 239.5;
 
  g2o::ParameterCamera* cameraParams = new g2o::ParameterCamera();
  cameraParams->setKcam(fx, fy, cx, cy);
@@ -537,7 +537,7 @@ bool GraphManager::nodeComparisons(Node* new_node,
             nodes_to_comp.push_front(graph_[vertices_to_comp[id_of_id]]); 
             ss << vertices_to_comp[id_of_id] << ", ";
         }
-        ROS_INFO_STREAM("Nodes to compare: " << ss.str());
+        ROS_INFO_STREAM("Nodes to compare: " << ss);
         QThreadPool* qtp = QThreadPool::globalInstance();
         ROS_INFO("Running node comparisons in parallel in %i (of %i) available threads", qtp->maxThreadCount() - qtp->activeThreadCount(), qtp->maxThreadCount());
         if (qtp->maxThreadCount() - qtp->activeThreadCount() == 1) {
@@ -935,10 +935,18 @@ void fixationOfVertices(std::string strategy,
       optimizer->vertex(graph[0]->vertex_id_)->setFixed(true);
     }
 }
+//
 double GraphManager::optimizeGraphImpl(double break_criterion)
 {
-  ScopedTimer s(__FUNCTION__, false, true); // not only for logging
   ParameterServer* ps = ParameterServer::instance();
+  bool usebackend = ps->get<bool>("usebackend");
+  if(!usebackend)
+  {
+    return 1.0;
+  }
+// return 1.0;
+  ScopedTimer s(__FUNCTION__, false, true); // not only for logging
+ // ParameterServer* ps = ParameterServer::instance();
   double stop_cond = break_criterion > 0.0 ? break_criterion : ps->get<double>("optimizer_iterations");
   ROS_WARN_NAMED("eval", "Loop Closures: %u, Sequential Edges: %u", loop_closures_edges, sequential_edges);
   ROS_WARN("Starting Optimization");
